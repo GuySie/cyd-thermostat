@@ -9,6 +9,8 @@
 substitutions:
   name: cyd-thermostat
   friendly_name: "CYD Thermostat Control"
+  project_name: "Guy Sie.CYD Thermostat Controller"
+  project_version: "0.1.0"
   thermostat_entity: climate.your-thermostat
   temperature_entity: sensor.your-thermometer
   api_key: !secret api_key
@@ -34,6 +36,9 @@ substitutions:
 esphome:
   name: ${name}
   friendly_name: ${friendly_name}
+  project:
+    name: ${project_name}
+    version: ${project_version}
 
 esp32:
   board: esp32dev
