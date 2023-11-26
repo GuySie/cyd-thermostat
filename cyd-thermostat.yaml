@@ -1,0 +1,363 @@
+# ============================================================ 
+# Edit substitutions for your naming, devices and passwords here.
+#
+# This code assumes you have a climate thermostat entity and a separate temperature sensor. If you want to use the temperature sensor in your thermostat you need to change the code.
+# thermostat_entity: Your climate entity that this device will control.
+# temperature_entity: Your thermometer sensor that measures the current temperature in the room. Only used for graph and display.
+
+substitutions:
+  name: cyd-thermostat
+  friendly_name: "CYD Thermostat Control"
+  thermostat_entity: climate.your-thermostat
+  temperature_entity: sensor.your-thermometer
+  api_key: !secret api_key
+  ota_password: !secret ota_password
+  ap_password: !secret ap_password
+  wifi_ssid: !secret wifi_ssid
+  wifi_password: !secret wifi_password
+
+# ============================================================ 
+# ESPHome YAML start
+#
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: ${api_key}
+
+ota:
+  password: ${ota_password}
+
+wifi:
+  ssid: ${wifi_ssid}
+  password: ${wifi_password}
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Cyd-Screen Fallback Hotspot"
+    password: ${ap_password}
+
+captive_portal:
+
+# ============================================================ 
+# ESPHome Display related setup
+#
+# Create a font to use, add and remove glyphs as needed. 
+font:
+  - file: 'fonts/Arimo-Regular.ttf'
+    id: arimo40
+    size: 40
+    glyphs: " .,°0123456789C+-OfNAna"
+  - file: 'fonts/Arimo-Regular.ttf'
+    id: arimo14
+    size: 14
+    glyphs: " .,0123456789NAna"
+  - file: 'fonts/Arimo-Regular.ttf'
+    id: arimo10
+    size: 10
+    glyphs: "CurentTagNA"
+
+# Create color scheme
+color:
+  - id: white
+    hex: ffffff
+  - id: ha_blue
+    hex: 18bcf2
+  - id: ha_yellow
+    hex: ffd502
+
+# Define the graph
+# TO DO: Weird behavior of target temperature line. Seems to not display until changed? Figure this out.
+graph:
+  - id: tempgraph
+    duration: 1h
+    width: 260
+    height: 100
+    x_grid: 10min
+    y_grid: 2.5
+    max_value: 25.0
+    min_value: 15.0
+    traces:
+# Display current temperature as a solid blue line
+      - sensor: current_temperature
+        line_type: SOLID
+        line_thickness: 2
+        color: ha_blue
+# Display target temperature as a dashed yellow line
+      - sensor: target_temperature
+        line_type: DASHED
+        line_thickness: 2
+        color: ha_yellow
+
+# ============================================================ 
+# Home Assistant related setup
+#
+light:
+# Set up display backlight
+  - platform: monochromatic
+    output: backlight_pwm
+    name: Display Backlight
+    id: backlight
+    restore_mode: ALWAYS_ON
+# Set up LED on the back and turn it off by default
+  - platform: rgb
+    name: RGB
+    id: led
+    red: led_red
+    green: led_green
+    blue: led_blue
+    restore_mode: ALWAYS_OFF
+
+# Set up sensors for thermostat state, current temperature, and target temperature
+text_sensor:
+  - platform: homeassistant
+    id: thermostat
+    entity_id: ${thermostat_entity}
+    internal: true
+
+sensor:
+  - platform: homeassistant
+    id: current_temperature
+    entity_id: ${temperature_entity}
+    internal: true
+  - platform: homeassistant
+    id: target_temperature
+    entity_id: ${thermostat_entity}
+    attribute: temperature
+    internal: true
+
+# Set up sensor for LDR (light meter)
+  - platform: adc
+    pin: GPIO34
+    id: board_ldr
+    name: "board_ldr"
+    update_interval: 10000ms
+    entity_category: "diagnostic"
+# Reports the WiFi signal strength/RSSI in dB
+  - platform: wifi_signal 
+    name: "WiFi Signal dB"
+    id: wifi_signal_db
+    update_interval: 60s
+    entity_category: "diagnostic"
+# Reports the WiFi signal strength in %
+  - platform: copy 
+    source_id: wifi_signal_db
+    name: "WiFi Signal Percent"
+    filters:
+      - lambda: return min(max(2 * (x + 100.0), 0.0), 100.0);
+    unit_of_measurement: "Signal %"
+    entity_category: "diagnostic"
+# Reports the light brightness in %
+# TO DO: If we smooth this out, we could use this to auto adjust brightness of backlight?
+# TO DO: Assumes values of 0.075 for full brightness and 0.49 for pitch black, for now - proper values should be tested.
+  - platform: copy 
+    source_id: board_ldr
+    name: "Light Percent"
+    filters:
+      - lambda: return min(max((100 - (((x - 0.075) / (0.49 - 0.075)) * 100)), 0.0), 100.0);
+    unit_of_measurement: "Light %"
+
+# Setup binary sensors for the four areas for touch
+# TO DO: Disable plus and minus areas when not in heating mode
+binary_sensor:
+
+# Minus button to lower target temperature
+  - platform: touchscreen
+    name: "Minus button"
+    x_min: 20
+    x_max: 80
+    y_min: 20
+    y_max: 60
+    on_press:
+      - homeassistant.service:
+          service: climate.set_temperature
+          data:
+            entity_id: ${thermostat_entity}
+            temperature: !lambda |-
+              auto target = id(target_temperature).state;
+              target -= 0.5;
+              return target;
+# Plus button to raise target temperature
+  - platform: touchscreen
+    name: "Plus button"
+    x_min: 240
+    x_max: 300
+    y_min: 20
+    y_max: 60
+    on_press:
+      - homeassistant.service:
+          service: climate.set_temperature
+          data:
+            entity_id: ${thermostat_entity}
+            temperature: !lambda |-
+              auto target = id(target_temperature).state;
+              target += 0.5;
+              return target;
+# Heat button to turn on heating mode
+  - platform: touchscreen
+    name: "Heat button"
+    x_min: 20
+    x_max: 80
+    y_min: 80
+    y_max: 120
+    on_press:
+      - homeassistant.service:
+          service: climate.turn_on
+          data:
+            entity_id: ${thermostat_entity}
+
+# Off button to turn off heating mode
+  - platform: touchscreen
+    name: "Off button"
+    x_min: 240
+    x_max: 300
+    y_min: 80
+    y_max: 120
+    on_press:
+      - homeassistant.service:
+          service: climate.turn_off
+          data:
+            entity_id: ${thermostat_entity}
+
+# ============================================================ 
+# Load images and icons
+# TO DO: Load Tile-card style button images
+
+image:
+  - file: mdi:fire
+    id: heat
+    resize: 34x34
+  - file: mdi:power
+    id: "off"
+    resize: 34x34
+
+# ============================================================ 
+# Hardware related setup
+#
+
+# Setup SPI for the display. The ESP32-2432S028R uses separate SPI buses for display and touch
+spi:
+  - id: tft
+    clk_pin: GPIO14
+    mosi_pin: GPIO13
+    miso_pin: GPIO12
+  - id: touch
+    clk_pin: GPIO25
+    mosi_pin: GPIO32
+    miso_pin: GPIO39
+
+# Setup board power switches
+switch:
+  - platform: restart
+    name: "$friendly_name restart"
+  - platform: shutdown
+    name: "$friendly_name shutdown"
+  - platform: safe_mode
+    name: "$friendly_name restart (Safe Mode)"
+
+# Setup a pin to control the backlight 
+output:
+  - platform: ledc
+    pin: GPIO21
+    id: backlight_pwm
+# Setup channels for the red/green/blue of the LED on the back
+  - platform: ledc
+    pin: GPIO4
+    id: led_red
+    inverted: true
+  - platform: ledc
+    pin: GPIO16
+    id: led_green
+    inverted: true
+  - platform: ledc
+    pin: GPIO17
+    id: led_blue
+    inverted: true
+
+# Setup the ili9xxx platform
+#
+# Display is used as 240x320 by default so we rotate it to 90°
+#
+# We print date and time wth the strftime() function, see the ESPHome documentation to 
+# format date and atime to your locale.
+display:
+  - platform: ili9xxx
+    model: ili9341
+    spi_id: tft
+    cs_pin: GPIO15
+    dc_pin: GPIO2
+    rotation: 90
+# Draw interface for touchscreen button control, display of current and target temperature, and graphing of current temperature
+# Only show target temperature and buttons if thermostat is in heating mode
+# TO DO: Replace blue and yellow filled rectangles with button images
+    lambda: |-
+      it.fill(id(Color::BLACK));
+      if (id(thermostat).state == "heat") {
+        it.filled_rectangle(20, 20, 60, 40, id(ha_blue));
+        it.print(50, 40, id(arimo40), TextAlign::CENTER, "-");
+        it.filled_rectangle(240, 20, 60, 40, id(ha_blue));
+        it.print(270, 40, id(arimo40), TextAlign::CENTER, "+");
+      }
+      if (id(thermostat).has_state()) {
+        if (id(thermostat).state == "heat") {
+          it.printf(160, 10, id(arimo10), TextAlign::TOP_CENTER, "Target");
+          it.printf(160, 17, id(arimo40), TextAlign::TOP_CENTER, "%.1f °C", id(target_temperature).state);
+        }
+        else {
+          if (id(thermostat).state == "off") {
+            it.printf(160, 17, id(arimo40), TextAlign::TOP_CENTER, "Off");
+          }
+        }
+      } 
+      if (id(thermostat).state == "heat") {
+        it.filled_rectangle(20, 80, 60, 40, id(ha_yellow));
+        it.image(33, 83, id(heat));
+      }
+      else {
+        it.filled_rectangle(20, 80, 60, 40, id(ha_blue));
+        it.image(33, 83, id(heat));
+      }
+      if (id(thermostat).state == "off") {
+        it.filled_rectangle(240, 80, 60, 40, id(ha_yellow));
+        it.image(253, 83, id(off));
+      }
+      else {
+        it.filled_rectangle(240, 80, 60, 40, id(ha_blue));
+        it.image(253, 83, id(off));
+      }
+      it.printf(160, 70, id(arimo10), TextAlign::TOP_CENTER, "Current");
+      if (id(current_temperature).has_state()) {
+        it.printf(160, 77, id(arimo40), TextAlign::TOP_CENTER, "%.1f °C", id(current_temperature).state);
+      }
+      it.print(10, 133, id(arimo14), TextAlign::CENTER_LEFT, "25");
+      it.print(10, 155, id(arimo14), TextAlign::CENTER_LEFT, "22.5");
+      it.print(10, 180, id(arimo14), TextAlign::CENTER_LEFT, "20");
+      it.print(10, 205, id(arimo14), TextAlign::CENTER_LEFT, "17.5");
+      it.print(10, 227, id(arimo14), TextAlign::CENTER_LEFT, "15");
+      it.graph(50, 130, id(tempgraph));
+# Set up the xpt2046 touch platform
+touchscreen:
+  platform: xpt2046
+  spi_id: touch
+  cs_pin: GPIO33
+  interrupt_pin: GPIO36
+  update_interval: 50ms
+  report_interval: 1s
+  threshold: 400
+  calibration_x_min: 3860
+  calibration_x_max: 280
+  calibration_y_min: 340
+  calibration_y_max: 3860
+  swap_x_y: false
