@@ -1,8 +1,8 @@
 # ============================================================ 
 # Edit substitutions for your naming, devices, and passwords here.
 #
-# By default this code assumes you have a climate thermostat entity and a separate temperature sensor.
-# If you want to use the temperature sensor built into your thermostat, scroll down to sensor: and use the commented code.
+# By default, this code assumes you have a climate thermostat entity and a separate temperature sensor.
+# If you want to use the temperature sensor built into your thermostat instead, scroll down to sensor: and use the commented code.
 # thermostat_entity: Your climate entity that this device will control.
 # temperature_entity: Your temperature sensor that measures the current temperature in the room. Only used for display purposes.
 
@@ -67,16 +67,25 @@ captive_portal:
 #
 # Create a font to use, add and remove glyphs as needed. 
 font:
-  - file: 'fonts/Arimo-Regular.ttf'
-    id: arimo40
+  - file:
+      type: gfonts
+      family: Roboto
+      weight: 400
+    id: roboto40
     size: 40
     glyphs: " .,°0123456789COfNAna"
-  - file: 'fonts/Arimo-Regular.ttf'
-    id: arimo14
+  - file:
+      type: gfonts
+      family: Roboto
+      weight: 400
+    id: roboto14
     size: 14
     glyphs: " .,0123456789NAna"
-  - file: 'fonts/Arimo-Regular.ttf'
-    id: arimo10
+  - file:
+      type: gfonts
+      family: Roboto
+      weight: 400
+    id: roboto10
     size: 10
     glyphs: ".CTNAurentagoci"
   - file:
@@ -252,6 +261,8 @@ binary_sensor:
                       target -= 0.5;
                       return target;
               - logger.log: "Lowering target temperature"
+    on_release:
+      - component.update: cyd
 
 # Plus button to raise target temperature, only active in heating mode
   - platform: touchscreen
@@ -278,7 +289,8 @@ binary_sensor:
                       target += 0.5;
                       return target;
               - logger.log: "Increasing target temperature"
-
+    on_release:
+      - component.update: cyd
 
 # Heat button to turn on heating mode
   - platform: touchscreen
@@ -289,11 +301,20 @@ binary_sensor:
     y_min: 80
     y_max: 120
     on_press:
-      - logger.log: "Turn on heating mode"
-      - homeassistant.service:
-          service: climate.turn_on
-          data:
-            entity_id: ${thermostat_entity}
+      - if:
+          condition:
+            text_sensor.state:
+              id: thermostat
+              state: 'off'
+          then:
+              - component.update: cyd
+              - logger.log: "Turn on heating mode"
+              - homeassistant.service:
+                  service: climate.turn_on
+                  data:
+                    entity_id: ${thermostat_entity}
+    on_release:
+      - component.update: cyd
 
 # Off button to turn off heating mode
   - platform: touchscreen
@@ -304,11 +325,20 @@ binary_sensor:
     y_min: 80
     y_max: 120
     on_press:
-      - logger.log: "Turn off heating mode"
-      - homeassistant.service:
-          service: climate.turn_off
-          data:
-            entity_id: ${thermostat_entity}
+      - if:
+          condition:
+            text_sensor.state:
+              id: thermostat
+              state: 'heat'
+          then:
+              - component.update: cyd
+              - logger.log: "Turn off heating mode"
+              - homeassistant.service:
+                  service: climate.turn_off
+                  data:
+                    entity_id: ${thermostat_entity}
+    on_release:
+      - component.update: cyd
 
 # ============================================================ 
 # Load images and icons
@@ -430,21 +460,21 @@ display:
 
       if (id(thermostat).has_state()) {
         if (id(thermostat).state == "heat") {
-          it.printf(160, 10, id(arimo10), TextAlign::TOP_CENTER, "Target");
-          it.printf(160, 17, id(arimo40), TextAlign::TOP_CENTER, "%.1f °C", id(target_temperature).state);
+          it.printf(160, 10, id(roboto10), TextAlign::TOP_CENTER, "Target");
+          it.printf(160, 17, id(roboto40), TextAlign::TOP_CENTER, "%.1f °C", id(target_temperature).state);
         }
         else {
           if (id(thermostat).state == "off") {
-            it.printf(160, 17, id(arimo40), TextAlign::TOP_CENTER, "Off");
+            it.printf(160, 17, id(roboto40), TextAlign::TOP_CENTER, "Off");
           }
         }
       } 
 
       if (id(current_temperature).has_state()) {
-        it.printf(160, 70, id(arimo10), TextAlign::TOP_CENTER, "Current");
-        it.printf(160, 77, id(arimo40), TextAlign::TOP_CENTER, "%.1f °C", id(current_temperature).state);
+        it.printf(160, 70, id(roboto10), TextAlign::TOP_CENTER, "Current");
+        it.printf(160, 77, id(roboto40), TextAlign::TOP_CENTER, "%.1f °C", id(current_temperature).state);
         if (id(current_temperature).has_state()) {
-          it.printf(160, 77, id(arimo40), TextAlign::TOP_CENTER, "%.1f °C", id(current_temperature).state);
+          it.printf(160, 77, id(roboto40), TextAlign::TOP_CENTER, "%.1f °C", id(current_temperature).state);
         }
         if (id(thermostat).state == "heat") {
           it.filled_rectangle(20, 80, 60, 40, id(mid_orange));
@@ -480,13 +510,13 @@ display:
         }
       }
       else {
-        it.printf(160, 70, id(arimo10), TextAlign::TOP_CENTER, "Connecting...");
+        it.printf(160, 70, id(roboto10), TextAlign::TOP_CENTER, "Connecting...");
       }
-      it.print(10, 133, id(arimo14), TextAlign::CENTER_LEFT, "25");
-      it.print(10, 155, id(arimo14), TextAlign::CENTER_LEFT, "22.5");
-      it.print(10, 180, id(arimo14), TextAlign::CENTER_LEFT, "20");
-      it.print(10, 205, id(arimo14), TextAlign::CENTER_LEFT, "17.5");
-      it.print(10, 227, id(arimo14), TextAlign::CENTER_LEFT, "15");
+      it.print(10, 133, id(roboto14), TextAlign::CENTER_LEFT, "25");
+      it.print(10, 155, id(roboto14), TextAlign::CENTER_LEFT, "22.5");
+      it.print(10, 180, id(roboto14), TextAlign::CENTER_LEFT, "20");
+      it.print(10, 205, id(roboto14), TextAlign::CENTER_LEFT, "17.5");
+      it.print(10, 227, id(roboto14), TextAlign::CENTER_LEFT, "15");
       it.graph(50, 130, id(tempgraph));
 
 # Set up the xpt2046 touch platform
