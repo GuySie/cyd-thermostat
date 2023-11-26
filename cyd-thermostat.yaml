@@ -1,9 +1,10 @@
 # ============================================================ 
-# Edit substitutions for your naming, devices and passwords here.
+# Edit substitutions for your naming, devices, and passwords here.
 #
-# This code assumes you have a climate thermostat entity and a separate temperature sensor. If you want to use the temperature sensor in your thermostat you need to change the code.
+# By default this code assumes you have a climate thermostat entity and a separate temperature sensor.
+# If you want to use the temperature sensor built into your thermostat, scroll down to sensor: and use the commented code.
 # thermostat_entity: Your climate entity that this device will control.
-# temperature_entity: Your thermometer sensor that measures the current temperature in the room. Only used for graph and display.
+# temperature_entity: Your temperature sensor that measures the current temperature in the room. Only used for display purposes.
 
 substitutions:
   name: cyd-thermostat
@@ -15,6 +16,16 @@ substitutions:
   ap_password: !secret ap_password
   wifi_ssid: !secret wifi_ssid
   wifi_password: !secret wifi_password
+
+# ============================================================ 
+# An experiment by Guy Sie
+# - [GitHub](https://github.com/guysie)
+# - [Twitter](https://twitter.com/guysie)
+# 
+# Based on example ESPHome code by Jonny Bergdahl
+# - [GitHub](https://github.com/jonnybergdahl)
+# - [Twitter](https://twitter.com/jonnybergdahl)
+# - [YouTube](https://www.youtube.com/jonnybergdahl)
 
 # ============================================================ 
 # ESPHome YAML start
@@ -46,7 +57,7 @@ wifi:
 
   # Enable fallback hotspot (captive portal) in case wifi connection fails
   ap:
-    ssid: "Cyd-Screen Fallback Hotspot"
+    ssid: "${name}"
     password: ${ap_password}
 
 captive_portal:
@@ -59,7 +70,7 @@ font:
   - file: 'fonts/Arimo-Regular.ttf'
     id: arimo40
     size: 40
-    glyphs: " .,°0123456789C+-OfNAna"
+    glyphs: " .,°0123456789COfNAna"
   - file: 'fonts/Arimo-Regular.ttf'
     id: arimo14
     size: 14
@@ -67,7 +78,19 @@ font:
   - file: 'fonts/Arimo-Regular.ttf'
     id: arimo10
     size: 10
-    glyphs: "CurentTagNA"
+    glyphs: ".CTNAurentagoci"
+  - file:
+      type: gfonts
+      family: Material+Symbols+Outlined
+      weight: 600
+    id: icon_font_34
+    size: 34
+    glyphs: [
+      "\U0000f16a", # mdi-fire
+      "\U0000e8ac", # mdi-power
+      "\U0000e145", # mdi-plus
+      "\U0000e15b", # mdi-minus
+      ]
 
 # Create color scheme
 color:
@@ -77,6 +100,20 @@ color:
     hex: 18bcf2
   - id: ha_yellow
     hex: ffd502
+  - id: light_orange
+    hex: edb597
+  - id: mid_orange
+    hex: df7d4a
+  - id: dark_orange
+    hex: bf5922
+  - id: light_gray
+    hex: e1e1e1
+  - id: mid_gray
+    hex: c0c0c0
+  - id: dark_gray
+    hex: 9e9e9e
+  - id: blackish
+    hex: "212121"
 
 # Define the graph
 # TO DO: Weird behavior of target temperature line. Seems to not display until changed? Figure this out.
@@ -128,23 +165,50 @@ text_sensor:
     internal: true
 
 sensor:
+# If you wish to use the current temperature from your thermostat, replace the following code block with the commmented code.
   - platform: homeassistant
     id: current_temperature
     entity_id: ${temperature_entity}
     internal: true
+#  - platform: homeassistant
+#    id: current_temperature
+#    entity_id: ${thermostat_entity}
+#    attribute: current_temperature
+#    internal: true
+
   - platform: homeassistant
     id: target_temperature
     entity_id: ${thermostat_entity}
     attribute: temperature
     internal: true
 
-# Set up sensor for LDR (light meter)
+# Set up sensor for LDR (ambient light meter) in V
   - platform: adc
     pin: GPIO34
     id: board_ldr
     name: "board_ldr"
-    update_interval: 10000ms
+    update_interval: 1000ms
     entity_category: "diagnostic"
+    accuracy_decimals: 3
+    internal: true
+    filters:
+      - sliding_window_moving_average:
+          window_size: 10
+          send_every: 10
+# Reports the ambient light in %
+# TO DO: Could use this to auto adjust brightness of backlight?
+# Values are based on simple desk testing:
+# Full dark with backlight turned off: 1.039V
+# Full dark with backlight turned on: 0.403V
+# Full light: 0.075V
+  - platform: copy 
+    source_id: board_ldr
+    name: "Ambient Light"
+    filters:
+      - lambda: return min(max((100 - (((x - 0.075) / (1.039 - 0.075)) * 100)), 0.0), 100.0);
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+
 # Reports the WiFi signal strength/RSSI in dB
   - platform: wifi_signal 
     name: "WiFi Signal dB"
@@ -159,60 +223,73 @@ sensor:
       - lambda: return min(max(2 * (x + 100.0), 0.0), 100.0);
     unit_of_measurement: "Signal %"
     entity_category: "diagnostic"
-# Reports the light brightness in %
-# TO DO: If we smooth this out, we could use this to auto adjust brightness of backlight?
-# TO DO: Assumes values of 0.075 for full brightness and 0.49 for pitch black, for now - proper values should be tested.
-  - platform: copy 
-    source_id: board_ldr
-    name: "Light Percent"
-    filters:
-      - lambda: return min(max((100 - (((x - 0.075) / (0.49 - 0.075)) * 100)), 0.0), 100.0);
-    unit_of_measurement: "Light %"
 
 # Setup binary sensors for the four areas for touch
-# TO DO: Disable plus and minus areas when not in heating mode
 binary_sensor:
 
-# Minus button to lower target temperature
+# Minus button to lower target temperature, only active in heating mode
   - platform: touchscreen
     name: "Minus button"
+    id: minusbutton
     x_min: 20
     x_max: 80
     y_min: 20
     y_max: 60
     on_press:
-      - homeassistant.service:
-          service: climate.set_temperature
-          data:
-            entity_id: ${thermostat_entity}
-            temperature: !lambda |-
-              auto target = id(target_temperature).state;
-              target -= 0.5;
-              return target;
-# Plus button to raise target temperature
+      - if:
+          condition:
+            text_sensor.state:
+              id: thermostat
+              state: 'heat'
+          then:
+              - component.update: cyd
+              - homeassistant.service:
+                  service: climate.set_temperature
+                  data:
+                    entity_id: ${thermostat_entity}
+                    temperature: !lambda |-
+                      auto target = id(target_temperature).state;
+                      target -= 0.5;
+                      return target;
+              - logger.log: "Lowering target temperature"
+
+# Plus button to raise target temperature, only active in heating mode
   - platform: touchscreen
     name: "Plus button"
+    id: plusbutton
     x_min: 240
     x_max: 300
     y_min: 20
     y_max: 60
     on_press:
-      - homeassistant.service:
-          service: climate.set_temperature
-          data:
-            entity_id: ${thermostat_entity}
-            temperature: !lambda |-
-              auto target = id(target_temperature).state;
-              target += 0.5;
-              return target;
+      - if:
+          condition:
+            text_sensor.state:
+              id: thermostat
+              state: 'heat'
+          then:
+              - component.update: cyd
+              - homeassistant.service:
+                  service: climate.set_temperature
+                  data:
+                    entity_id: ${thermostat_entity}
+                    temperature: !lambda |-
+                      auto target = id(target_temperature).state;
+                      target += 0.5;
+                      return target;
+              - logger.log: "Increasing target temperature"
+
+
 # Heat button to turn on heating mode
   - platform: touchscreen
     name: "Heat button"
+    id: heatbutton
     x_min: 20
     x_max: 80
     y_min: 80
     y_max: 120
     on_press:
+      - logger.log: "Turn on heating mode"
       - homeassistant.service:
           service: climate.turn_on
           data:
@@ -221,11 +298,13 @@ binary_sensor:
 # Off button to turn off heating mode
   - platform: touchscreen
     name: "Off button"
+    id: offbutton
     x_min: 240
     x_max: 300
     y_min: 80
     y_max: 120
     on_press:
+      - logger.log: "Turn off heating mode"
       - homeassistant.service:
           service: climate.turn_off
           data:
@@ -233,15 +312,9 @@ binary_sensor:
 
 # ============================================================ 
 # Load images and icons
-# TO DO: Load Tile-card style button images
-
-image:
-  - file: mdi:fire
-    id: heat
-    resize: 34x34
-  - file: mdi:power
-    id: "off"
-    resize: 34x34
+# Not used anymore.
+# MDI images now loaded as google material design icon font glyphs
+# Buttons are now made out of shaded filled rectangles
 
 # ============================================================ 
 # Hardware related setup
@@ -286,6 +359,19 @@ output:
     id: led_blue
     inverted: true
 
+# Set up sound
+# TO DO: If speaker added to JST, we can use it to provide audio feedback on button presses.
+
+#i2s_audio:
+#  i2s_lrclk_pin: GPIO25
+#  i2s_bclk_pin: GPIO26
+
+#media_player:
+#  - platform: i2s_audio
+#    name: ESPHome I2S Media Player
+#    dac_type: internal
+#    mode: stereo
+
 # Setup the ili9xxx platform
 #
 # Display is used as 240x320 by default so we rotate it to 90°
@@ -299,17 +385,49 @@ display:
     cs_pin: GPIO15
     dc_pin: GPIO2
     rotation: 90
-# Draw interface for touchscreen button control, display of current and target temperature, and graphing of current temperature
+    id: cyd
+# Draw interface for touchscreen button control, display of current and target temperature, and graph of current temperature
 # Only show target temperature and buttons if thermostat is in heating mode
-# TO DO: Replace blue and yellow filled rectangles with button images
+# Buttons change shading to look raised or sunken based on heating mode or binary sensor
     lambda: |-
       it.fill(id(Color::BLACK));
+
       if (id(thermostat).state == "heat") {
-        it.filled_rectangle(20, 20, 60, 40, id(ha_blue));
-        it.print(50, 40, id(arimo40), TextAlign::CENTER, "-");
-        it.filled_rectangle(240, 20, 60, 40, id(ha_blue));
-        it.print(270, 40, id(arimo40), TextAlign::CENTER, "+");
+        if (id(minusbutton).state) {
+          it.filled_rectangle(20, 20, 60, 40, id(mid_gray));
+          it.filled_rectangle(20, 58, 60, 2, id(light_gray));
+          it.filled_rectangle(78, 20, 2, 40, id(light_gray));
+          it.filled_rectangle(20, 20, 60, 2, id(dark_gray));
+          it.filled_rectangle(20, 20, 2, 40, id(dark_gray));
+          it.printf(50, 40, id(icon_font_34), blackish, TextAlign::CENTER, "\U0000e15b");
+        }
+        else {
+          it.filled_rectangle(20, 20, 60, 40, id(mid_gray));
+          it.filled_rectangle(20, 20, 60, 2, id(light_gray));
+          it.filled_rectangle(20, 20, 2, 40, id(light_gray));
+          it.filled_rectangle(20, 58, 60, 2, id(dark_gray));
+          it.filled_rectangle(78, 20, 2, 40, id(dark_gray));
+          it.printf(50, 40, id(icon_font_34), blackish, TextAlign::CENTER, "\U0000e15b");
+        }
+
+        if (id(plusbutton).state) {
+          it.filled_rectangle(240, 20, 60, 40, id(mid_gray));
+          it.filled_rectangle(240, 58, 60, 2, id(light_gray));
+          it.filled_rectangle(298, 20, 2, 40, id(light_gray));
+          it.filled_rectangle(240, 20, 60, 2, id(dark_gray));
+          it.filled_rectangle(240, 20, 2, 40, id(dark_gray));
+          it.printf(270, 40, id(icon_font_34), blackish, TextAlign::CENTER, "\U0000e145");
+        }
+        else {
+          it.filled_rectangle(240, 20, 60, 40, id(mid_gray));
+          it.filled_rectangle(240, 20, 60, 2, id(light_gray));
+          it.filled_rectangle(240, 20, 2, 40, id(light_gray));
+          it.filled_rectangle(240, 58, 60, 2, id(dark_gray));
+          it.filled_rectangle(298, 20, 2, 40, id(dark_gray));
+          it.printf(270, 40, id(icon_font_34), blackish, TextAlign::CENTER, "\U0000e145");
+        }
       }
+
       if (id(thermostat).has_state()) {
         if (id(thermostat).state == "heat") {
           it.printf(160, 10, id(arimo10), TextAlign::TOP_CENTER, "Target");
@@ -321,25 +439,48 @@ display:
           }
         }
       } 
-      if (id(thermostat).state == "heat") {
-        it.filled_rectangle(20, 80, 60, 40, id(ha_yellow));
-        it.image(33, 83, id(heat));
-      }
-      else {
-        it.filled_rectangle(20, 80, 60, 40, id(ha_blue));
-        it.image(33, 83, id(heat));
-      }
-      if (id(thermostat).state == "off") {
-        it.filled_rectangle(240, 80, 60, 40, id(ha_yellow));
-        it.image(253, 83, id(off));
-      }
-      else {
-        it.filled_rectangle(240, 80, 60, 40, id(ha_blue));
-        it.image(253, 83, id(off));
-      }
-      it.printf(160, 70, id(arimo10), TextAlign::TOP_CENTER, "Current");
+
       if (id(current_temperature).has_state()) {
+        it.printf(160, 70, id(arimo10), TextAlign::TOP_CENTER, "Current");
         it.printf(160, 77, id(arimo40), TextAlign::TOP_CENTER, "%.1f °C", id(current_temperature).state);
+        if (id(current_temperature).has_state()) {
+          it.printf(160, 77, id(arimo40), TextAlign::TOP_CENTER, "%.1f °C", id(current_temperature).state);
+        }
+        if (id(thermostat).state == "heat") {
+          it.filled_rectangle(20, 80, 60, 40, id(mid_orange));
+          it.filled_rectangle(20, 118, 60, 2, id(light_orange));
+          it.filled_rectangle(78, 80, 2, 40, id(light_orange));          
+          it.filled_rectangle(20, 80, 60, 2, id(dark_orange));
+          it.filled_rectangle(20, 80, 2, 40, id(dark_orange));
+          it.printf(50, 100, id(icon_font_34), white, TextAlign::CENTER, "\U0000f16a");
+       }
+        else {
+          it.filled_rectangle(20, 80, 60, 40, id(mid_gray));
+          it.filled_rectangle(20, 80, 60, 2, id(light_gray));
+          it.filled_rectangle(20, 80, 2, 40, id(light_gray));
+          it.filled_rectangle(20, 118, 60, 2, id(dark_gray));
+          it.filled_rectangle(78, 80, 2, 40, id(dark_gray));
+          it.printf(50, 100, id(icon_font_34), blackish, TextAlign::CENTER, "\U0000f16a");
+        }
+        if (id(thermostat).state == "off") {
+          it.filled_rectangle(240, 80, 60, 40, id(mid_gray));
+          it.filled_rectangle(240, 118, 60, 2, id(light_gray));
+          it.filled_rectangle(298, 80, 2, 40, id(light_gray));
+          it.filled_rectangle(240, 80, 60, 2, id(dark_gray));
+          it.filled_rectangle(240, 80, 2, 40, id(dark_gray));
+          it.printf(270, 100, id(icon_font_34), blackish, TextAlign::CENTER, "\U0000e8ac");
+        }
+        else {
+          it.filled_rectangle(240, 80, 60, 40, id(mid_gray));
+          it.filled_rectangle(240, 80, 60, 2, id(light_gray));
+          it.filled_rectangle(240, 80, 2, 40, id(light_gray));
+          it.filled_rectangle(240, 118, 60, 2, id(dark_gray));
+          it.filled_rectangle(298, 80, 2, 40, id(dark_gray));
+          it.printf(270, 100, id(icon_font_34), blackish, TextAlign::CENTER, "\U0000e8ac");
+        }
+      }
+      else {
+        it.printf(160, 70, id(arimo10), TextAlign::TOP_CENTER, "Connecting...");
       }
       it.print(10, 133, id(arimo14), TextAlign::CENTER_LEFT, "25");
       it.print(10, 155, id(arimo14), TextAlign::CENTER_LEFT, "22.5");
@@ -347,6 +488,7 @@ display:
       it.print(10, 205, id(arimo14), TextAlign::CENTER_LEFT, "17.5");
       it.print(10, 227, id(arimo14), TextAlign::CENTER_LEFT, "15");
       it.graph(50, 130, id(tempgraph));
+
 # Set up the xpt2046 touch platform
 touchscreen:
   platform: xpt2046
