@@ -20,5 +20,9 @@ This code is my first experiment to create a thermostat controller on a CYD, pro
 - If you still want to use the current temperature sensor built into your climate entity, scroll down to the `sensor:` part of the yaml code. There is a replacement block of code you can use in the comments.
 - You need to the connect the CYD by cable for the first flash of an ESPHome firmware; all future updates are flashed over-the-air.
 
+ESPHome no longer lets devices make Home Assistant service calls by default. Because the thermostat commands are service calls, you will need to turn this on manually for every new device:
+
+Go to: Settings > Devices & Services > ESPHome > Configure (on the right of your CYD device) > turn on "Allow the device to make Home Assistant service calls."
+
 # Thanks
 This code is based on the ESPHome example code by [Jonny Bergdahl](https://github.com/jonnybergdahl).
