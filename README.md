@@ -1,6 +1,8 @@
 # cyd-thermostat
 ESPHome/Home Assistant based thermostat controller for Cheap Yellow Display (CYD).
 
+# UPDATE: I am no longer actively using or maintaining this project. Use at your own risk.
+
 ![cyd-thermostat in action!](https://raw.githubusercontent.com/GuySie/cyd-thermostat/main/cyd-thermostat.jpg)
 *CYD thermostat controller controlling my studio thermostat*
 
