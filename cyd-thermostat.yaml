@@ -54,6 +54,7 @@ api:
     key: ${api_key}
 
 ota:
+  platform: esphome
   password: ${ota_password}
 
 wifi:
@@ -421,6 +422,10 @@ display:
     dc_pin: GPIO2
     rotation: 90
     id: cyd
+    invert_colors: false # invert_colors is Required
+    dimensions:
+      height: 240
+      width: 320
 # Draw interface for touchscreen button control, display of current and target temperature, and graph of current temperature
 # Only show target temperature and buttons if thermostat is in heating mode
 # Buttons change shading to look raised or sunken based on heating mode or binary sensor
@@ -531,10 +536,16 @@ touchscreen:
   cs_pin: GPIO33
   interrupt_pin: GPIO36
   update_interval: 50ms
-  report_interval: 1s
   threshold: 400
-  calibration_x_min: 3860
-  calibration_x_max: 280
-  calibration_y_min: 340
-  calibration_y_max: 3860
-  swap_x_y: false
+  calibration:
+    x_min: 3860
+    x_max: 280
+    y_min: 340
+    y_max: 3860
+  transform:  
+    swap_x_y: false
+    #  In some variants of the CYD swap_x_y and mirror_y must be TRUE
+    # mirror_x: false
+    # mirror_y: true
+    # swap_x_y: true
+    
